@@ -1,0 +1,42 @@
+{
+  "resourceType": "Questionnaire",
+  "id": "basic-medical-questionnaire",
+  "title": "Basic Medical Assessment",
+  "status": "active",
+  "item": [
+    {
+      "linkId": "1",
+      "text": "Patient Name",
+      "type": "string",
+      "required": true
+    },
+    {
+      "linkId": "2",
+      "text": "Patient Age",
+      "type": "integer",
+      "required": true
+    },
+    {
+      "linkId": "3",
+      "text": "Does the patient experience tremor?",
+      "type": "boolean"
+    },
+    {
+      "linkId": "4",
+      "text": "Motor symptom severity (0-4)",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 },
+        { "valueInteger": 4 }
+      ]
+    },
+    {
+      "linkId": "5",
+      "text": "Notes from examiner",
+      "type": "text"
+    }
+  ]
+}

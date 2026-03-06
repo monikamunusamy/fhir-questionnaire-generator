@@ -1,0 +1,47 @@
+{
+  "resourceType": "QuestionnaireResponse",
+  "questionnaire": "basic-medical-questionnaire",
+  "status": "completed",
+  "item": [
+    {
+      "linkId": "1",
+      "answer": [
+        {
+          "valueString": "Mina Rossi"
+        }
+      ]
+    },
+    {
+      "linkId": "2",
+      "answer": [
+        {
+          "valueInteger": 35
+        }
+      ]
+    },
+    {
+      "linkId": "3",
+      "answer": [
+        {
+          "valueBoolean": true
+        }
+      ]
+    },
+    {
+      "linkId": "4",
+      "answer": [
+        {
+          "valueInteger": 2
+        }
+      ]
+    },
+    {
+      "linkId": "5",
+      "answer": [
+        {
+          "valueString": "Symptoms stable since last visit."
+        }
+      ]
+    }
+  ]
+}
