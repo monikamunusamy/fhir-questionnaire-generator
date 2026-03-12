@@ -1,0 +1,47 @@
+{
+  "resourceType": "QuestionnaireResponse",
+  "questionnaire": "patient-intake-questionnaire",
+  "status": "completed",
+  "item": [
+    {
+      "linkId": "1",
+      "answer": [
+        {
+          "valueString": "Anna Schmidt"
+        }
+      ]
+    },
+    {
+      "linkId": "2",
+      "answer": [
+        {
+          "valueString": "unsupported-type"
+        }
+      ]
+    },
+    {
+      "linkId": "3",
+      "answer": [
+        {
+          "valueInteger": 71
+        }
+      ]
+    },
+    {
+      "linkId": "4",
+      "answer": [
+        {
+          "valueBoolean": false
+        }
+      ]
+    },
+    {
+      "linkId": "5",
+      "answer": [
+        {
+          "valueString": "Patient reports mild symptoms."
+        }
+      ]
+    }
+  ]
+}

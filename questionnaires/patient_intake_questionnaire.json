@@ -1,0 +1,36 @@
+{
+  "resourceType": "Questionnaire",
+  "id": "patient-intake-questionnaire",
+  "title": "Patient Intake Form",
+  "status": "active",
+  "item": [
+    {
+      "linkId": "1",
+      "text": "Patient Full Name",
+      "type": "string",
+      "required": true
+    },
+    {
+      "linkId": "2",
+      "text": "Date of Birth",
+      "type": "date",
+      "required": true
+    },
+    {
+      "linkId": "3",
+      "text": "Patient Age",
+      "type": "integer",
+      "required": true
+    },
+    {
+      "linkId": "4",
+      "text": "Does the patient currently take medication?",
+      "type": "boolean"
+    },
+    {
+      "linkId": "5",
+      "text": "Reason for visit",
+      "type": "text"
+    }
+  ]
+}

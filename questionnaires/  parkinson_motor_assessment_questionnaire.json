@@ -1,0 +1,55 @@
+{
+  "resourceType": "Questionnaire",
+  "id": "parkinson-motor-assessment-questionnaire",
+  "title": "Parkinson Motor Assessment",
+  "status": "active",
+  "item": [
+    {
+      "linkId": "1",
+      "text": "Patient Name",
+      "type": "string",
+      "required": true
+    },
+    {
+      "linkId": "2",
+      "text": "Rest tremor severity (0-4)",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 },
+        { "valueInteger": 4 }
+      ]
+    },
+    {
+      "linkId": "3",
+      "text": "Finger tapping severity (0-4)",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 },
+        { "valueInteger": 4 }
+      ]
+    },
+    {
+      "linkId": "4",
+      "text": "Postural stability severity (0-4)",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 },
+        { "valueInteger": 4 }
+      ]
+    },
+    {
+      "linkId": "5",
+      "text": "Additional examiner note",
+      "type": "text"
+    }
+  ]
+}

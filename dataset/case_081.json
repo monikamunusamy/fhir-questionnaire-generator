@@ -1,0 +1,47 @@
+{
+  "resourceType": "QuestionnaireResponse",
+  "questionnaire": "patient-intake-questionnaire",
+  "status": "completed",
+  "item": [
+    {
+      "linkId": "1",
+      "answer": [
+        {
+          "valueString": "Sara Rossi"
+        }
+      ]
+    },
+    {
+      "linkId": "2",
+      "answer": [
+        {
+          "valueString": "unsupported-type"
+        }
+      ]
+    },
+    {
+      "linkId": "3",
+      "answer": [
+        {
+          "valueInteger": 40
+        }
+      ]
+    },
+    {
+      "linkId": "4",
+      "answer": [
+        {
+          "valueBoolean": true
+        }
+      ]
+    },
+    {
+      "linkId": "5",
+      "answer": [
+        {
+          "valueString": "Symptoms stable since last visit."
+        }
+      ]
+    }
+  ]
+}

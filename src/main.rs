@@ -1,6 +1,7 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 struct Questionnaire {
@@ -103,9 +104,10 @@ fn generate_answer(qtype: &str, question_text: &str, options: &[AnswerOption]) -
         }
 
         "integer" => {
-            // 1) If FHIR answerOption exists, sample ONLY from allowed values (FHIR-constrained)
+            // If FHIR answerOption exists, use it
             if !options.is_empty() {
                 let valid_ints: Vec<i64> = options.iter().filter_map(|o| o.value_integer).collect();
+
                 if !valid_ints.is_empty() {
                     let picked = valid_ints[rng.gen_range(0..valid_ints.len())];
                     return Answer {
@@ -116,7 +118,7 @@ fn generate_answer(qtype: &str, question_text: &str, options: &[AnswerOption]) -
                 }
             }
 
-            // 2) Otherwise fall back to rule-based ranges
+            // Otherwise use simple rules
             let val = if text_lower.contains("age") {
                 rng.gen_range(18..=90)
             } else if text_lower.contains("severity") || text_lower.contains("score") {
@@ -146,13 +148,7 @@ fn generate_answer(qtype: &str, question_text: &str, options: &[AnswerOption]) -
     }
 }
 
-fn main() {
-    // 1) Load Questionnaire
-    let q_path = "questionnaires/basic_medical_questionnaire.json";
-    let data = fs::read_to_string(q_path).expect("Failed to read questionnaire file");
-    let q: Questionnaire = serde_json::from_str(&data).expect("Invalid questionnaire JSON");
-
-    // 2) Generate QuestionnaireResponse items
+fn generate_questionnaire_response(q: &Questionnaire) -> QuestionnaireResponse {
     let response_items: Vec<ResponseItem> = q
         .item
         .iter()
@@ -167,17 +163,45 @@ fn main() {
         })
         .collect();
 
-    let qr = QuestionnaireResponse {
+    QuestionnaireResponse {
         resource_type: "QuestionnaireResponse".to_string(),
         questionnaire: q.id.clone(),
         status: "completed".to_string(),
         item: response_items,
-    };
+    }
+}
 
-    // 3) Write to file
-    let out_json = serde_json::to_string_pretty(&qr).expect("Failed to serialize response");
-    fs::write("output_questionnaire_response.json", &out_json)
-        .expect("Failed to write output file");
+fn main() {
+    let q_path = format!(
+        "{}/questionnaires/patient_intake_questionnaire.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
 
-    println!(" Generated output_questionnaire_response.json");
+    println!("Trying to load questionnaire from:");
+    println!("{}", q_path);
+
+    // 1) Load Questionnaire
+    let data = fs::read_to_string(&q_path).expect("Failed to read questionnaire file");
+    let q: Questionnaire = serde_json::from_str(&data).expect("Invalid questionnaire JSON");
+
+    // 2) Create dataset folder in project root
+    let dataset_dir = format!("{}/dataset", env!("CARGO_MANIFEST_DIR"));
+
+    if !Path::new(&dataset_dir).exists() {
+        fs::create_dir(&dataset_dir).expect("Failed to create dataset directory");
+    }
+
+    let num_cases = 100;
+
+    for i in 1..=num_cases {
+        let qr = generate_questionnaire_response(&q);
+
+        let file_name = format!("{}/case_{:03}.json", dataset_dir, i);
+        let out_json =
+            serde_json::to_string_pretty(&qr).expect("Failed to serialize response");
+
+        fs::write(&file_name, out_json).expect("Failed to write dataset file");
+    }
+
+    println!(" Generated {} synthetic QuestionnaireResponse files in '{}'", num_cases, dataset_dir);
 }
