@@ -1,3 +1,7 @@
 target/
 dataset/
+rendered_forms/
+templates/
+test_output.pdf
+test_case_overlay.pdf
 output_questionnaire_response.json

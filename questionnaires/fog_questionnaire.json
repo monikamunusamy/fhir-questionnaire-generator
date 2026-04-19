@@ -1,0 +1,52 @@
+{
+  "resourceType": "Questionnaire",
+  "id": "fog-score",
+  "title": "Freezing of Gait Score (FOG)",
+  "status": "active",
+  "item": [
+    {
+      "linkId": "1",
+      "text": "Start",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "2",
+      "text": "360 turn clockwise",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "3",
+      "text": "360 turn counterclockwise",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "4",
+      "text": "Narrow passage",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    }
+  ]
+}
