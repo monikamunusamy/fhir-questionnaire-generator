@@ -17,7 +17,7 @@
     },
     {
       "linkId": "2",
-      "text": "360 turn clockwise",
+      "text": "Walk 360 degrees clockwise",
       "type": "integer",
       "answerOption": [
         { "valueInteger": 0 },
@@ -28,7 +28,7 @@
     },
     {
       "linkId": "3",
-      "text": "360 turn counterclockwise",
+      "text": "Walk 360 degrees counterclockwise",
       "type": "integer",
       "answerOption": [
         { "valueInteger": 0 },
@@ -39,7 +39,95 @@
     },
     {
       "linkId": "4",
-      "text": "Narrow passage",
+      "text": "Pass through narrow doorway",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "5",
+      "text": "Start while carrying tray and water glass",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "6",
+      "text": "Carry tray and water glass, 360 degrees clockwise",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "7",
+      "text": "Carry tray and water glass, 360 degrees counterclockwise",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "8",
+      "text": "Carry tray and water glass through narrow doorway",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "9",
+      "text": "Start while carrying tray, water glass, and additional cognitive task",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "10",
+      "text": "Carry tray, water glass, and cognitive task, 360 degrees clockwise",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "11",
+      "text": "Carry tray, water glass, and cognitive task, 360 degrees counterclockwise",
+      "type": "integer",
+      "answerOption": [
+        { "valueInteger": 0 },
+        { "valueInteger": 1 },
+        { "valueInteger": 2 },
+        { "valueInteger": 3 }
+      ]
+    },
+    {
+      "linkId": "12",
+      "text": "Carry tray, water glass, and cognitive task through narrow doorway",
       "type": "integer",
       "answerOption": [
         { "valueInteger": 0 },

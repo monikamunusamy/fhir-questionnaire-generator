@@ -1,9 +1,6 @@
-use printpdf::*;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::fs::File;
-use std::io::BufWriter;
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -141,6 +138,7 @@ fn generate_answer(qtype: &str, question_text: &str, options: &[AnswerOption]) -
         }
 
         "integer" => {
+            // Highest priority: use explicit FHIR answerOption values
             if !options.is_empty() {
                 let valid_ints: Vec<i64> =
                     options.iter().filter_map(|o| o.value_integer).collect();
@@ -155,6 +153,7 @@ fn generate_answer(qtype: &str, question_text: &str, options: &[AnswerOption]) -
                 }
             }
 
+            // Rule-based generation when no answerOption exists
             let val = if text_lower.contains("age") {
                 rng.gen_range(18..=90)
             } else if text_lower.contains("score")
@@ -242,247 +241,6 @@ fn generate_questionnaire_response(q: &Questionnaire) -> QuestionnaireResponse {
     }
 }
 
-fn answer_to_string(answer: &Answer) -> String {
-    if let Some(v) = &answer.value_string {
-        return v.clone();
-    }
-    if let Some(v) = answer.value_integer {
-        return v.to_string();
-    }
-    if let Some(v) = answer.value_boolean {
-        return if v { "Yes".to_string() } else { "No".to_string() };
-    }
-    "(empty)".to_string()
-}
-
-fn render_score_line(value: i64, options: &[AnswerOption]) -> String {
-    let valid_ints: Vec<i64> = options.iter().filter_map(|o| o.value_integer).collect();
-
-    if valid_ints.is_empty() {
-        return value.to_string();
-    }
-
-    let parts: Vec<String> = valid_ints
-        .iter()
-        .map(|v| {
-            if *v == value {
-                format!("[X] {}", v)
-            } else {
-                format!("[ ] {}", v)
-            }
-        })
-        .collect();
-
-    parts.join("   ")
-}
-
-fn write_text_line(
-    layer: &PdfLayerReference,
-    font: &IndirectFontRef,
-    text: &str,
-    size: f32,
-    x: f32,
-    y: f32,
-) {
-    layer.use_text(text, size, Mm(x), Mm(y), font);
-}
-
-fn draw_line(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32) {
-    let line = Line {
-        points: vec![
-            (Point::new(Mm(x1), Mm(y1)), false),
-            (Point::new(Mm(x2), Mm(y2)), false),
-        ],
-        is_closed: false,
-    };
-
-    layer.add_line(line);
-}
-
-fn draw_cover_page(
-    doc: &PdfDocumentReference,
-    page: PdfPageIndex,
-    layer_index: PdfLayerIndex,
-    case_number: usize,
-    total_score: i64,
-) {
-    let layer = doc.get_page(page).get_layer(layer_index);
-    let font = doc
-        .add_builtin_font(BuiltinFont::Helvetica)
-        .expect("Failed to load font");
-
-    write_text_line(&layer, &font, "Testing M. Parkinson", 20.0, 20.0, 270.0);
-    write_text_line(&layer, &font, "Synthetic Clinical Form", 12.0, 20.0, 260.0);
-
-    draw_line(&layer, 20.0, 252.0, 190.0, 252.0);
-
-    write_text_line(&layer, &font, "Case ID", 11.0, 20.0, 240.0);
-    write_text_line(
-        &layer,
-        &font,
-        &format!("CASE-{:03}", case_number),
-        11.0,
-        60.0,
-        240.0,
-    );
-
-    write_text_line(&layer, &font, "Date", 11.0, 20.0, 230.0);
-    write_text_line(&layer, &font, "2026-03-26", 11.0, 60.0, 230.0);
-
-    write_text_line(&layer, &font, "Birth Date", 11.0, 20.0, 220.0);
-    write_text_line(&layer, &font, "1965-04-27", 11.0, 60.0, 220.0);
-
-    write_text_line(&layer, &font, "Clinical Overview", 14.0, 20.0, 200.0);
-draw_line(&layer, 20.0, 196.0, 190.0, 196.0);
-
-    write_text_line(&layer, &font, "Assessment Type: FOG", 11.0, 20.0, 182.0);
-    write_text_line(&layer, &font, "Visit Type: Follow-up", 11.0, 20.0, 172.0);
-    write_text_line(
-    &layer,
-    &font,
-    &format!("FOG Total Score: {}", total_score),
-    11.0,
-    20.0,
-    162.0,
-);
-
-    write_text_line(&layer, &font, "Signatures / Notes", 12.0, 20.0, 110.0);
-    draw_line(&layer, 20.0, 100.0, 140.0, 100.0);
-    draw_line(&layer, 20.0, 85.0, 140.0, 85.0);
-    draw_line(&layer, 20.0, 70.0, 140.0, 70.0);
-}
-
-fn draw_fog_page(
-    doc: &PdfDocumentReference,
-    page: PdfPageIndex,
-    layer_index: PdfLayerIndex,
-    questionnaire: &Questionnaire,
-    response: &QuestionnaireResponse,
-    case_number: usize,
-) {
-    let layer = doc.get_page(page).get_layer(layer_index);
-    let font = doc
-        .add_builtin_font(BuiltinFont::Helvetica)
-        .expect("Failed to load font");
-
-    write_text_line(&layer, &font, "Freezing of Gait Score (FOG)", 18.0, 10.0, 280.0);
-    write_text_line(&layer, &font, "ID", 11.0, 150.0, 286.0);
-    write_text_line(
-        &layer,
-        &font,
-        &format!("CASE-{:03}", case_number),
-        11.0,
-        165.0,
-        286.0,
-    );
-    write_text_line(&layer, &font, "Date", 11.0, 150.0, 278.0);
-    write_text_line(&layer, &font, "2026-03-26", 11.0, 165.0, 278.0);
-
-    let start_y: f32 = 255.0;
-    let row_height: f32 = 12.0;
-    let rows = questionnaire.item.len() as i32 + 2;
-
-    for i in 0..=rows {
-        let y = start_y - i as f32 * row_height;
-        draw_line(&layer, 10.0, y, 200.0, y);
-    }
-
-    draw_line(&layer, 10.0, start_y, 10.0, start_y - rows as f32 * row_height);
-    draw_line(&layer, 30.0, start_y, 30.0, start_y - rows as f32 * row_height);
-    draw_line(&layer, 120.0, start_y, 120.0, start_y - rows as f32 * row_height);
-    draw_line(&layer, 200.0, start_y, 200.0, start_y - rows as f32 * row_height);
-
-    write_text_line(&layer, &font, "Item", 10.0, 14.0, start_y - 8.0);
-    write_text_line(&layer, &font, "Task", 10.0, 40.0, start_y - 8.0);
-    write_text_line(&layer, &font, "Score", 10.0, 130.0, start_y - 8.0);
-
-    for (i, q_item) in questionnaire.item.iter().enumerate() {
-        let y = start_y - (i as f32 + 2.0) * row_height + 4.0;
-
-        write_text_line(&layer, &font, &(i + 1).to_string(), 10.0, 14.0, y);
-
-        let task_text = q_item.text.clone().unwrap_or_default();
-        write_text_line(&layer, &font, &task_text, 9.0, 34.0, y);
-
-        let response_item = response.item.iter().find(|r| r.link_id == q_item.link_id);
-
-        if let Some(item) = response_item {
-            let value = item.answer[0].value_integer.unwrap_or(0);
-            let score_line = render_score_line(value, &q_item.answer_option);
-            write_text_line(&layer, &font, &score_line, 9.0, 124.0, y);
-        }
-    }
-
-    let total: i64 = response
-        .item
-        .iter()
-        .map(|r| r.answer[0].value_integer.unwrap_or(0))
-        .sum();
-
-    let total_y = start_y - (questionnaire.item.len() as f32 + 2.0) * row_height + 4.0;
-    write_text_line(&layer, &font, "Total Score", 10.0, 34.0, total_y);
-    write_text_line(
-        &layer,
-        &font,
-        &format!("{}", total),
-        10.0,
-        170.0,
-        total_y,
-    );
-
-    let legend_top = 180.0;
-    write_text_line(&layer, &font, "Legend", 12.0, 10.0, legend_top);
-
-    draw_line(&layer, 10.0, 172.0, 200.0, 172.0);
-    draw_line(&layer, 10.0, 160.0, 200.0, 160.0);
-    draw_line(&layer, 10.0, 148.0, 200.0, 148.0);
-    draw_line(&layer, 10.0, 136.0, 200.0, 136.0);
-
-    draw_line(&layer, 10.0, 172.0, 10.0, 136.0);
-    draw_line(&layer, 40.0, 172.0, 40.0, 136.0);
-    draw_line(&layer, 80.0, 172.0, 80.0, 136.0);
-    draw_line(&layer, 120.0, 172.0, 120.0, 136.0);
-    draw_line(&layer, 160.0, 172.0, 160.0, 136.0);
-    draw_line(&layer, 200.0, 172.0, 200.0, 136.0);
-
-    write_text_line(&layer, &font, "Score", 9.0, 15.0, 164.0);
-    write_text_line(&layer, &font, "0", 9.0, 52.0, 164.0);
-    write_text_line(&layer, &font, "1", 9.0, 92.0, 164.0);
-    write_text_line(&layer, &font, "2", 9.0, 132.0, 164.0);
-    write_text_line(&layer, &font, "3", 9.0, 172.0, 164.0);
-
-    write_text_line(&layer, &font, "Meaning", 9.0, 15.0, 152.0);
-    write_text_line(&layer, &font, "None", 8.0, 45.0, 152.0);
-    write_text_line(&layer, &font, "Mild", 8.0, 85.0, 152.0);
-    write_text_line(&layer, &font, "Moderate", 8.0, 125.0, 152.0);
-    write_text_line(&layer, &font, "Severe", 8.0, 165.0, 152.0);
-}
-
-fn render_case_pdf(
-    questionnaire: &Questionnaire,
-    response: &QuestionnaireResponse,
-    file_path: &str,
-    case_number: usize,
-) {
-    let (doc, cover_page, cover_layer) =
-        PdfDocument::new("Parkinson Case", Mm(210.0), Mm(297.0), "Cover");
-
-    let total: i64 = response
-        .item
-        .iter()
-        .map(|r| r.answer[0].value_integer.unwrap_or(0))
-        .sum();
-
-    draw_cover_page(&doc, cover_page, cover_layer, case_number, total);
-
-    let (fog_page, fog_layer) = doc.add_page(Mm(210.0), Mm(297.0), "FOG");
-    draw_fog_page(&doc, fog_page, fog_layer, questionnaire, response, case_number);
-
-    let mut writer =
-        BufWriter::new(File::create(file_path).expect("Failed to create case PDF file"));
-    doc.save(&mut writer).expect("Failed to save case PDF");
-}
-
 fn main() {
     let q_path = format!(
         "{}/questionnaires/fog_questionnaire.json",
@@ -494,15 +252,14 @@ fn main() {
     let data = fs::read_to_string(&q_path).expect("Failed to read questionnaire file");
     let q: Questionnaire = serde_json::from_str(&data).expect("Invalid questionnaire JSON");
 
+    if let Some(title) = &q.title {
+        println!("Loaded questionnaire: {}", title);
+    }
+
     let dataset_dir = format!("{}/dataset", env!("CARGO_MANIFEST_DIR"));
-    let rendered_dir = format!("{}/rendered_forms", env!("CARGO_MANIFEST_DIR"));
 
     if !Path::new(&dataset_dir).exists() {
         fs::create_dir(&dataset_dir).expect("Failed to create dataset directory");
-    }
-
-    if !Path::new(&rendered_dir).exists() {
-        fs::create_dir(&rendered_dir).expect("Failed to create rendered_forms directory");
     }
 
     let num_cases = 20;
@@ -511,14 +268,12 @@ fn main() {
         let qr = generate_questionnaire_response(&q);
 
         let json_file = format!("{}/case_{:03}.json", dataset_dir, i);
-        let pdf_file = format!("{}/case_{:03}.pdf", rendered_dir, i);
 
         let json_content =
             serde_json::to_string_pretty(&qr).expect("Failed to serialize response");
-        fs::write(&json_file, json_content).expect("Failed to write dataset file");
 
-        render_case_pdf(&q, &qr, &pdf_file, i);
+        fs::write(&json_file, json_content).expect("Failed to write dataset file");
     }
 
-    println!("PDF cases generated successfully.");
+    println!("JSON cases generated successfully.");
 }

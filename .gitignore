@@ -5,3 +5,5 @@ templates/
 test_output.pdf
 test_case_overlay.pdf
 output_questionnaire_response.json
+Cargo.lock
+.DS_Store
