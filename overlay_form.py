@@ -1,239 +1,232 @@
-import fitz
-import json
-import random
+"""
+generate_assets.py
+Creates handwritten X and O PNG stamp assets for the FOG overlay.
+
+Run from the project folder:
+    python3 generate_assets.py
+"""
+
 import math
 from pathlib import Path
 
-TEMPLATE_PDF = "templates/fog_blank.pdf"
-PAGE_INDEX   = 4
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter
 
-COL_X = {"a": 378, "b": 411, "c": 447, "d": 482}
-ROW_Y = {
-    "1": 214, "2": 232, "3": 251, "4": 270,
-    "5": 310, "6": 328, "7": 347, "8": 366,
-    "9": 405, "10": 424, "11": 444, "12": 463,
-}
-TOTAL_Y = 481
-CELL_W, CELL_H = 33, 19
-CIRCLE_R, X_SIZE = 6.5, 5.5
-FONT_PATH = "handwriting.ttf"
+SIZE = 180
+SCALE = 3
+CANVAS = SIZE * SCALE
+CENTER = CANVAS // 2
+X_COUNT = 64
+O_COUNT = 64
 
 
-def cover(page, x0, y0, x1, y1):
-    page.draw_rect(fitz.Rect(x0,y0,x1,y1),
-                   color=(1,1,1), fill=(1,1,1))
+def fresh_canvas():
+    return Image.new("RGBA", (CANVAS, CANVAS), (255, 255, 255, 0))
 
 
-def jitter(val, amount=1.0):
-    return val + random.uniform(-amount, amount)
+def ink_color(rng):
+    v = int(rng.integers(0, 34))
+    a = int(rng.integers(236, 255))
+    return (v, v, v, a)
 
 
-def draw_realistic_circle(page, cx, cy):
-    """Bezier circle with pressure simulation."""
-    r     = CIRCLE_R * random.uniform(0.88, 1.05)
-    cx    = jitter(cx, 1.2)
-    cy    = jitter(cy, 1.0)
-    gap   = random.uniform(5, 22)
-    start = random.uniform(0, 360)
-    steps = 32
-
-    for i in range(steps):
-        a1 = math.radians(start + (360-gap)*i/steps)
-        a2 = math.radians(start + (360-gap)*(i+1)/steps)
-
-        t        = i / steps
-        pressure = 0.4 + 0.7 * math.sin(math.pi * t)
-        width    = max(0.3, pressure * random.uniform(0.75, 1.1))
-
-        p1 = fitz.Point(
-            cx + (r+random.uniform(-0.4,0.4)) * math.cos(a1),
-            cy + (r+random.uniform(-0.4,0.4)) * math.sin(a1)
-        )
-        p2 = fitz.Point(
-            cx + (r+random.uniform(-0.4,0.4)) * math.cos(a2),
-            cy + (r+random.uniform(-0.4,0.4)) * math.sin(a2)
-        )
-        page.draw_line(p1, p2, color=(0,0,0), width=width)
+def draw_segment(draw, p0, p1, width, color):
+    draw.line([p0, p1], fill=color, width=max(1, int(width)), joint="curve")
 
 
-def draw_realistic_x(page, cx, cy):
-    """Bezier X with pressure simulation."""
-    s     = X_SIZE * random.uniform(0.88, 1.08)
-    cx    = jitter(cx, 1.0)
-    cy    = jitter(cy, 1.0)
-
-    # Line 1 with pressure
-    steps = 12
-    for i in range(steps):
-        t  = i / steps
-        t2 = (i+1) / steps
-        pressure = 0.5 + 0.6 * math.sin(math.pi * t)
-        width    = max(0.4, pressure * random.uniform(0.9, 1.3))
-
-        x1 = cx - s + 2*s*t  + jitter(0, 0.4)
-        y1 = cy - s + 2*s*t  + jitter(0, 0.4)
-        x2 = cx - s + 2*s*t2 + jitter(0, 0.4)
-        y2 = cy - s + 2*s*t2 + jitter(0, 0.4)
-
-        page.draw_line(fitz.Point(x1,y1), fitz.Point(x2,y2),
-                       color=(0,0,0), width=width)
-
-    # Line 2 with pressure
-    for i in range(steps):
-        t  = i / steps
-        t2 = (i+1) / steps
-        pressure = 0.5 + 0.6 * math.sin(math.pi * t)
-        width    = max(0.4, pressure * random.uniform(0.9, 1.3))
-
-        x1 = cx + s - 2*s*t  + jitter(0, 0.4)
-        y1 = cy - s + 2*s*t  + jitter(0, 0.4)
-        x2 = cx + s - 2*s*t2 + jitter(0, 0.4)
-        y2 = cy - s + 2*s*t2 + jitter(0, 0.4)
-
-        page.draw_line(fitz.Point(x1,y1), fitz.Point(x2,y2),
-                       color=(0,0,0), width=width)
+def pressure_line(draw, pts, rng, base_width):
+    n = len(pts) - 1
+    for i in range(n):
+        t = i / max(n - 1, 1)
+        pressure = 0.48 + 0.82 * math.sin(math.pi * t)
+        width = base_width * pressure * rng.uniform(0.85, 1.18)
+        draw_segment(draw, pts[i], pts[i + 1], width, ink_color(rng))
 
 
-def add_scan_noise(page, seed):
-    random.seed(seed + 999)
-    pw = page.rect.width
-    ph = page.rect.height
-
-    # Dust specks
-    for _ in range(random.randint(10, 30)):
-        page.draw_circle(
-            fitz.Point(random.uniform(10,pw-10),
-                       random.uniform(10,ph-10)),
-            random.uniform(0.3, 1.0),
-            color=(0,0,0), fill=(0,0,0)
-        )
-
-    # Scan lines
-    for _ in range(random.randint(3, 8)):
-        gray = random.uniform(0.80, 0.93)
-        page.draw_line(
-            fitz.Point(0, random.uniform(30, ph-30)),
-            fitz.Point(pw, random.uniform(30, ph-30)),
-            color=(gray,gray,gray),
-            width=random.uniform(0.3, 1.0)
-        )
-
-    # Edge shadow
-    gray = random.uniform(0.83, 0.93)
-    w    = random.uniform(4, 9)
-    page.draw_rect(fitz.Rect(0,0,w,ph),
-                   color=(gray,gray,gray), fill=(gray,gray,gray))
-    page.draw_rect(fitz.Rect(pw-w,0,pw,ph),
-                   color=(gray,gray,gray), fill=(gray,gray,gray))
+def cubic_path(p0, p1, rng, steps=36, wobble=2.2):
+    x0, y0 = p0
+    x1, y1 = p1
+    dx = x1 - x0
+    dy = y1 - y0
+    bend = rng.uniform(-0.11, 0.11)
+    c1 = (x0 + dx * 0.30 - dy * bend + rng.uniform(-wobble, wobble),
+          y0 + dy * 0.30 + dx * bend + rng.uniform(-wobble, wobble))
+    c2 = (x0 + dx * 0.70 + dy * bend + rng.uniform(-wobble, wobble),
+          y0 + dy * 0.70 - dx * bend + rng.uniform(-wobble, wobble))
+    pts = []
+    for i in range(steps + 1):
+        t = i / steps
+        mt = 1 - t
+        x = mt**3 * x0 + 3 * mt**2 * t * c1[0] + 3 * mt * t**2 * c2[0] + t**3 * x1
+        y = mt**3 * y0 + 3 * mt**2 * t * c1[1] + 3 * mt * t**2 * c2[1] + t**3 * y1
+        pts.append((x + rng.normal(0, wobble * 0.22), y + rng.normal(0, wobble * 0.22)))
+    return pts
 
 
-def place(page, x, y, text, size=9, color=(0,0,0)):
-    page.insert_text((x,y), str(text), fontsize=size, color=color)
+def rotate_point(cx, cy, dx, dy, angle):
+    ca = math.cos(angle)
+    sa = math.sin(angle)
+    return (cx + dx * ca - dy * sa, cy + dx * sa + dy * ca)
 
 
-def get_nested_answers(item):
-    result = {}
-    for child in item.get("item", []):
-        lid = child["linkId"]
-        ans = child.get("answer", [])
-        if ans and "valueBoolean" in ans[0]:
-            result[lid] = ans[0]["valueBoolean"]
-    return result
+def pen_stop(draw, x, y, rng, scale=1.0):
+    if rng.random() > 0.58:
+        return
+    r = rng.uniform(1.0, 2.8) * SCALE * scale
+    draw.ellipse([x - r, y - r, x + r, y + r], fill=ink_color(rng))
 
 
-def render_fog_case(case_json_path, output_pdf_path,
-                    case_id, case_date, seed):
-    random.seed(seed)
+def crop_and_finish(img, rng):
+    alpha = img.getchannel("A")
+    if rng.random() < 0.55:
+        alpha = alpha.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0.18, 0.42) * SCALE))
+        img.putalpha(alpha)
 
-    with open(case_json_path, "r", encoding="utf-8") as f:
-        case_data = json.load(f)
+    bbox = img.getbbox()
+    if bbox is None:
+        return img.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
 
-    doc  = fitz.open(TEMPLATE_PDF)
-    page = doc[PAGE_INDEX]
+    pad = int(rng.uniform(18, 28) * SCALE)
+    x0 = max(0, bbox[0] - pad)
+    y0 = max(0, bbox[1] - pad)
+    x1 = min(CANVAS, bbox[2] + pad)
+    y1 = min(CANVAS, bbox[3] + pad)
+    cropped = img.crop((x0, y0, x1, y1))
 
-    col_order = [("a",COL_X["a"]),("b",COL_X["b"]),
-                 ("c",COL_X["c"]),("d",COL_X["d"])]
+    out = Image.new("RGBA", (CANVAS, CANVAS), (255, 255, 255, 0))
+    ox = (CANVAS - cropped.width) // 2 + int(rng.normal(0, 2.0 * SCALE))
+    oy = (CANVAS - cropped.height) // 2 + int(rng.normal(0, 2.0 * SCALE))
+    out.alpha_composite(cropped, (ox, oy))
 
-    # Header
-    cover(page, 355, 42, 560, 90)
-    place(page, jitter(420,1), jitter(57,1), case_id,   size=10)
-    place(page, jitter(420,1), jitter(76,1), case_date, size=10)
+    arr = np.array(out, dtype=np.float32)
+    alpha_noise = rng.normal(0, 2.2, arr[:, :, 3].shape)
+    arr[:, :, 3] = np.clip(arr[:, :, 3] + alpha_noise * (arr[:, :, 3] > 0), 0, 255)
+    out = Image.fromarray(arr.astype(np.uint8), "RGBA")
+    return out.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
 
-    # Erase score cells
-    for y in list(ROW_Y.values()) + [TOTAL_Y]:
-        cover(page,
-              COL_X["a"]-CELL_W//2, y-CELL_H//2,
-              COL_X["d"]+CELL_W//2, y+CELL_H//2)
 
-    # Answers
-    answers_map = {}
-    for gi in case_data.get("item", []):
-        answers_map[gi["linkId"]] = get_nested_answers(gi)
+def make_x(seed):
+    rng = np.random.default_rng(seed)
+    img = fresh_canvas()
+    draw = ImageDraw.Draw(img)
 
-    totals = {"a":0,"b":0,"c":0,"d":0}
+    cx = CENTER + rng.uniform(-6, 6) * SCALE
+    cy = CENTER + rng.uniform(-6, 6) * SCALE
+    half = rng.uniform(30, 38) * SCALE
+    overshoot = rng.uniform(1.5, 5.0) * SCALE
+    angle = math.radians(rng.uniform(-9, 9))
+    base_width = rng.uniform(3.8, 6.4) * SCALE
 
-    for row_id, yc in ROW_Y.items():
-        answers = answers_map.get(row_id, {})
-        for suffix, cx in col_order:
-            value = answers.get(f"{row_id}{suffix}", False)
-            if value:
-                draw_realistic_x(page, cx, yc)
-                totals[suffix] += 1
-            else:
-                draw_realistic_circle(page, cx, yc)
+    h = half + overshoot
+    first = (rotate_point(cx, cy, -h, -h, angle), rotate_point(cx, cy, h, h, angle))
+    second = (rotate_point(cx, cy, h, -h, angle), rotate_point(cx, cy, -h, h, angle))
 
-    # Gesamtscore
-    cover(page,
-          COL_X["a"]-CELL_W//2, TOTAL_Y-CELL_H//2,
-          COL_X["d"]+CELL_W//2, TOTAL_Y+CELL_H//2)
-    for suffix, cx in col_order:
-        draw_realistic_circle(page, cx, TOTAL_Y)
-        num = str(totals[suffix])
-        place(page, cx-3, TOTAL_Y+3, num, size=7)
+    for start, end in (first, second):
+        pts = cubic_path(start, end, rng, steps=26, wobble=rng.uniform(0.45, 1.25) * SCALE)
+        pressure_line(draw, pts, rng, base_width)
+        pen_stop(draw, *start, rng, scale=0.75)
+        pen_stop(draw, *end, rng, scale=0.75)
 
-    # Scan noise
-    add_scan_noise(page, seed)
+    if rng.random() < 0.18:
+        pen_stop(draw, cx, cy, rng, scale=0.55)
 
-    # Save only FOG page
-    out = fitz.open()
-    out.insert_pdf(doc, from_page=PAGE_INDEX, to_page=PAGE_INDEX)
-    Path(output_pdf_path).parent.mkdir(parents=True, exist_ok=True)
-    out.save(str(output_pdf_path))
-    out.close()
-    doc.close()
+    return crop_and_finish(img, rng)
 
-    return totals
+
+def ellipse_points(cx, cy, rx, ry, angle, rng, steps=86, gap=None):
+    start = rng.uniform(0, 360)
+    gap_start = rng.uniform(0, 360) if gap else None
+    pts = []
+    for i in range(steps + 1):
+        deg = (start + 360 * i / steps) % 360
+        if gap is not None:
+            gap_end = (gap_start + gap) % 360
+            in_gap = deg > gap_start if gap_start < gap_end else deg > gap_start or deg < gap_end
+            if in_gap:
+                pts.append(None)
+                continue
+        theta = math.radians(deg)
+        local_rx = rx + rng.normal(0, 1.2 * SCALE)
+        local_ry = ry + rng.normal(0, 1.0 * SCALE)
+        x = local_rx * math.cos(theta)
+        y = local_ry * math.sin(theta)
+        pts.append(rotate_point(cx, cy, x, y, angle))
+    return pts
+
+
+def pressure_polyline(draw, pts, rng, base_width):
+    segment = []
+    for pt in pts:
+        if pt is None:
+            if len(segment) > 1:
+                pressure_line(draw, segment, rng, base_width)
+            segment = []
+        else:
+            segment.append(pt)
+    if len(segment) > 1:
+        pressure_line(draw, segment, rng, base_width)
+
+
+def make_o(seed):
+    rng = np.random.default_rng(seed)
+    img = fresh_canvas()
+    draw = ImageDraw.Draw(img)
+
+    cx = CENTER + rng.uniform(-6, 6) * SCALE
+    cy = CENTER + rng.uniform(-6, 6) * SCALE
+    rx = rng.uniform(23, 32) * SCALE
+    ry = rng.uniform(26, 38) * SCALE
+    angle = math.radians(rng.uniform(-12, 12))
+    base_width = rng.uniform(4.0, 6.8) * SCALE
+    gap = None
+
+    pts = ellipse_points(cx, cy, rx, ry, angle, rng, gap=gap)
+    pressure_polyline(draw, pts, rng, base_width)
+
+    if rng.random() < 0.36:
+        pen_stop(draw, *rotate_point(cx, cy, rx, 0, angle), rng, scale=0.55)
+    return crop_and_finish(img, rng)
+
+
+def make_preview(x_imgs, o_imgs, path):
+    pad = 6
+    cols = 8
+    rows = ([x_imgs[i:i + cols] for i in range(0, len(x_imgs), cols)]
+            + [[]]
+            + [o_imgs[i:i + cols] for i in range(0, len(o_imgs), cols)])
+    w = cols * (SIZE + pad) + pad
+    h = len(rows) * (SIZE + pad) + pad
+    grid = Image.new("RGB", (w, h), (218, 218, 218))
+    for ri, row in enumerate(rows):
+        for ci, img in enumerate(row):
+            bg = Image.new("RGB", (SIZE, SIZE), (255, 255, 255))
+            bg.paste(img, mask=img.getchannel("A"))
+            grid.paste(bg, (pad + ci * (SIZE + pad), pad + ri * (SIZE + pad)))
+    grid.save(path)
 
 
 def main():
-    dataset_dir  = Path("dataset")
-    rendered_dir = Path("rendered_forms")
-    rendered_dir.mkdir(exist_ok=True)
+    x_dir = Path("assets/x_marks")
+    o_dir = Path("assets/o_marks")
+    x_dir.mkdir(parents=True, exist_ok=True)
+    o_dir.mkdir(parents=True, exist_ok=True)
 
-    case_files = sorted(dataset_dir.glob("case_*.json"))
-    if not case_files:
-        print("❌  Run 'cargo run' first.")
-        return
+    x_imgs = []
+    o_imgs = []
+    print(f"Generating {X_COUNT} X marks...")
+    for i in range(X_COUNT):
+        img = make_x(i * 41 + 3)
+        img.save(x_dir / f"x{i + 1:02d}.png")
+        x_imgs.append(img)
 
-    print(f"📋  Generating {len(case_files)} cases...\n")
+    print(f"Generating {O_COUNT} O marks...")
+    for i in range(O_COUNT):
+        img = make_o(i * 43 + 7)
+        img.save(o_dir / f"o{i + 1:02d}.png")
+        o_imgs.append(img)
 
-    for case_file in case_files:
-        stem    = case_file.stem
-        num_str = stem.replace("case_", "")
-        output  = rendered_dir / f"fog_{stem}.pdf"
-
-        totals = render_fog_case(
-            case_json_path  = str(case_file),
-            output_pdf_path = output,
-            case_id         = f"CASE-{num_str}",
-            case_date       = "26.03.2026",
-            seed            = int(num_str) * 137,
-        )
-        print(f"  ✅  CASE-{num_str}  "
-              f"a:{totals['a']} b:{totals['b']} "
-              f"c:{totals['c']} d:{totals['d']}")
-
-    print(f"\n🎉  Done — {len(case_files)} PDFs in rendered_forms/")
+    make_preview(x_imgs, o_imgs, "assets/preview.png")
+    print(f"Ready: {X_COUNT} X + {O_COUNT} O handwritten assets in assets/")
 
 
 if __name__ == "__main__":
