@@ -1,233 +1,322 @@
 """
-generate_assets.py
-Creates handwritten X and O PNG stamp assets for the FOG overlay.
+overlay_form.py
+Professional document degradation pipeline for synthetic FOG forms.
 
-Run from the project folder:
-    python3 generate_assets.py
+Stage 1: Load blank template PDF
+Stage 2: Stamp handwritten PNG marks into cells
+Stage 3: Flatten full page to raster image
+Stage 4: Apply full document degradation:
+         - paper tint + uneven illumination
+         - scanner grain noise
+         - ink bleed blur
+         - JPEG compression artifacts
+         - subtle page warp
+         - scanner skew rotation
+Stage 5: Save as final PDF — indistinguishable from real scanned form
 """
 
-import math
+import fitz
+import json, random, math, io
+import numpy as np
+import cv2
+from PIL import Image, ImageFilter, ImageEnhance
 from pathlib import Path
 
-import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+TEMPLATE_PDF = "templates/fog_blank.pdf"
+PAGE_INDEX   = 4
+ASSETS_DIR   = Path("assets")
 
-SIZE = 180
-SCALE = 3
-CANVAS = SIZE * SCALE
-CENTER = CANVAS // 2
-X_COUNT = 64
-O_COUNT = 64
+# Score cell centres measured from the scanned template grid.
+COL_X = {"a": 399, "b": 435, "c": 468, "d": 501}
 
-
-def fresh_canvas():
-    return Image.new("RGBA", (CANVAS, CANVAS), (255, 255, 255, 0))
-
-
-def ink_color(rng):
-    v = int(rng.integers(0, 34))
-    a = int(rng.integers(236, 255))
-    return (v, v, v, a)
+ROW_Y = {
+    "1":  214, "2":  232, "3":  251, "4":  270,
+    "5":  310, "6":  328, "7":  347, "8":  366,
+    "9":  405, "10": 424, "11": 444, "12": 463,
+}
+TOTAL_Y = 481
+CELL_W  = 33
+CELL_H  = 19
+CELL_CLEAR_W = 31
+CELL_CLEAR_H = 15
 
 
-def draw_segment(draw, p0, p1, width, color):
-    draw.line([p0, p1], fill=color, width=max(1, int(width)), joint="curve")
+# ── Asset loader ──────────────────────────────────────────────────────────────
+class MarkAssets:
+    def __init__(self, d):
+        self.xs = sorted((d/"x_marks").glob("*.png"))
+        self.os = sorted((d/"o_marks").glob("*.png"))
+        assert self.xs, "No X assets — run generate_assets.py first"
+        assert self.os, "No O assets — run generate_assets.py first"
+        print(f"  {len(self.xs)} X + {len(self.os)} O assets loaded")
+
+    def rand_x(self): return Image.open(random.choice(self.xs)).copy()
+    def rand_o(self): return Image.open(random.choice(self.os)).copy()
 
 
-def pressure_line(draw, pts, rng, base_width):
-    n = len(pts) - 1
-    for i in range(n):
-        t = i / max(n - 1, 1)
-        pressure = 0.48 + 0.82 * math.sin(math.pi * t)
-        width = base_width * pressure * rng.uniform(0.85, 1.18)
-        draw_segment(draw, pts[i], pts[i + 1], width, ink_color(rng))
+# ── Mark transform ────────────────────────────────────────────────────────────
+def transform_mark(img, rng):
+    """Apply rotation, scale, opacity — each mark unique."""
+    # Rotation: clinicians tilt marks ±20 degrees
+    angle = float(rng.uniform(-24, 24))
+    img   = img.rotate(angle, expand=False,
+                        resample=Image.BICUBIC,
+                        fillcolor=(0, 0, 0, 0))
+    # Scale: human marks vary, but should still fit inside the printed cell.
+    sc  = float(rng.uniform(0.92, 1.18))
+    nw  = max(10, int(img.width  * sc))
+    nh  = max(10, int(img.height * sc))
+    img = img.resize((nw, nh), Image.LANCZOS)
+    # Opacity: pen pressure varies while staying legible after scan processing.
+    alpha = img.split()[3]
+    fac   = float(rng.uniform(0.88, 1.00))
+    alpha = alpha.point(lambda p: int(p * fac))
+    img.putalpha(alpha)
+    return img
 
 
-def cubic_path(p0, p1, rng, steps=36, wobble=2.2):
-    x0, y0 = p0
-    x1, y1 = p1
-    dx = x1 - x0
-    dy = y1 - y0
-    bend = rng.uniform(-0.11, 0.11)
-    c1 = (x0 + dx * 0.30 - dy * bend + rng.uniform(-wobble, wobble),
-          y0 + dy * 0.30 + dx * bend + rng.uniform(-wobble, wobble))
-    c2 = (x0 + dx * 0.70 + dy * bend + rng.uniform(-wobble, wobble),
-          y0 + dy * 0.70 - dx * bend + rng.uniform(-wobble, wobble))
-    pts = []
-    for i in range(steps + 1):
-        t = i / steps
-        mt = 1 - t
-        x = mt**3 * x0 + 3 * mt**2 * t * c1[0] + 3 * mt * t**2 * c2[0] + t**3 * x1
-        y = mt**3 * y0 + 3 * mt**2 * t * c1[1] + 3 * mt * t**2 * c2[1] + t**3 * y1
-        pts.append((x + rng.normal(0, wobble * 0.22), y + rng.normal(0, wobble * 0.22)))
-    return pts
+def stamp(page, pil_img, cx, cy, rng):
+    """Stamp mark centred at cx,cy. Fills cell properly."""
+    mark = transform_mark(pil_img, rng)
+
+    # Human placement jitter — nobody marks exactly centre
+    cx += float(rng.normal(0, 0.8))
+    cy += float(rng.normal(0, 0.55))
+
+    # Fill the score cell enough to look handwritten, not like a tiny icon.
+    target_w = CELL_W * float(rng.uniform(0.84, 0.96))
+    target_h = CELL_H * float(rng.uniform(1.00, 1.14))
+    sc   = min(target_w / mark.width, target_h / mark.height)
+    fw   = mark.width  * sc
+    fh   = mark.height * sc
+    rect = fitz.Rect(cx-fw/2, cy-fh/2, cx+fw/2, cy+fh/2)
+    buf  = io.BytesIO()
+    mark.save(buf, format="PNG")
+    page.insert_image(rect, stream=buf.getvalue(), keep_proportion=True)
 
 
-def rotate_point(cx, cy, dx, dy, angle):
-    ca = math.cos(angle)
-    sa = math.sin(angle)
-    return (cx + dx * ca - dy * sa, cy + dx * sa + dy * ca)
+# ── Document degradation pipeline ─────────────────────────────────────────────
+def degrade(pil_img, rng):
+    """
+    Full document degradation pipeline.
+    Converts clean digital render into realistic scanned paper.
+    """
+    img = pil_img.convert("L")
+    arr = np.array(img, dtype=np.float32)
+    h, w = arr.shape
+
+    # Scanner optics and paper are not perfectly even, but the reference remains
+    # a high-contrast black-and-white clinical scan.
+    img = Image.fromarray(arr.astype(np.uint8))
+    img = img.filter(ImageFilter.GaussianBlur(radius=float(rng.uniform(0.18, 0.38))))
+    img = ImageEnhance.Contrast(img).enhance(float(rng.uniform(1.15, 1.42)))
+    img = ImageEnhance.Brightness(img).enhance(float(rng.uniform(1.00, 1.08)))
+    arr = np.array(img, dtype=np.float32)
+
+    yy, xx = np.mgrid[0:h, 0:w]
+    lamp = (
+        1.0
+        + float(rng.uniform(-0.018, 0.020)) * ((xx - w / 2) / w)
+        + float(rng.uniform(-0.018, 0.020)) * ((yy - h / 2) / h)
+    )
+    vignette = 1.0 - float(rng.uniform(0.018, 0.045)) * (
+        ((xx - w / 2) / w) ** 2 + ((yy - h / 2) / h) ** 2
+    )
+    arr = arr * lamp * vignette
+
+    paper_noise = rng.normal(0, float(rng.uniform(0.8, 1.8)), arr.shape)
+    low_freq = rng.normal(0, 1, (max(2, h // 96), max(2, w // 96))).astype(np.float32)
+    low_freq = cv2.resize(low_freq, (w, h), interpolation=cv2.INTER_CUBIC)
+    arr = arr + paper_noise + low_freq * float(rng.uniform(1.0, 2.4))
+
+    dark = arr < 150
+    arr[dark] *= float(rng.uniform(0.80, 0.91))
+    arr[~dark] = arr[~dark] * float(rng.uniform(0.97, 1.01)) + float(rng.uniform(1.0, 5.0))
+    arr = np.clip(arr, 0, 255)
+
+    # A tiny elastic warp gives scanned forms imperfect vertical/horizontal lines
+    # without the slow per-pixel loop.
+    amp_x = float(rng.uniform(0.25, 0.85))
+    amp_y = float(rng.uniform(0.20, 0.65))
+    map_x = (xx + amp_x * np.sin(2 * math.pi * yy / h + rng.uniform(0, math.pi))).astype(np.float32)
+    map_y = (yy + amp_y * np.sin(2 * math.pi * xx / w + rng.uniform(0, math.pi))).astype(np.float32)
+    arr = cv2.remap(arr.astype(np.uint8), map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+    # Small dust/speckle, kept sparse so it reads as scanner noise rather than dirt.
+    speckles = rng.random(arr.shape)
+    arr[speckles < float(rng.uniform(0.00005, 0.00012))] = rng.integers(0, 45)
+    arr[speckles > float(rng.uniform(0.99990, 0.99996))] = rng.integers(238, 256)
+
+    img = Image.fromarray(arr.astype(np.uint8))
+    if rng.random() < 0.75:
+        img = img.filter(ImageFilter.UnsharpMask(radius=1.0, percent=int(rng.integers(90, 135)), threshold=3))
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=int(rng.integers(78, 91)))
+    buf.seek(0)
+    img = Image.open(buf).convert("L")
+
+    angle = float(rng.uniform(-0.45, 0.45))
+    return img.rotate(angle, fillcolor=246, expand=False, resample=Image.BICUBIC)
 
 
-def pen_stop(draw, x, y, rng, scale=1.0):
-    if rng.random() > 0.58:
-        return
-    r = rng.uniform(1.0, 2.8) * SCALE * scale
-    draw.ellipse([x - r, y - r, x + r, y + r], fill=ink_color(rng))
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def cover(page, x0, y0, x1, y1):
+    page.draw_rect(fitz.Rect(x0, y0, x1, y1),
+                   color=(1,1,1), fill=(1,1,1))
+
+def clear_cell(page, cx, cy):
+    page.draw_rect(
+        fitz.Rect(
+            cx - CELL_CLEAR_W / 2,
+            cy - CELL_CLEAR_H / 2,
+            cx + CELL_CLEAR_W / 2,
+            cy + CELL_CLEAR_H / 2,
+        ),
+        color=(1, 1, 1),
+        fill=(1, 1, 1),
+    )
+
+def redraw_score_grid(page):
+    x_lines = [381, 418, 452, 485, 517]
+    y_lines = [
+        202.0, 221.2, 240.5, 259.7, 279.0,
+        298.2, 317.2, 336.5, 355.8, 374.8,
+        394.5, 413.7, 432.8, 452.2, 471.3, 491.2,
+    ]
+    for x in x_lines:
+        page.draw_line((x, y_lines[0]), (x, y_lines[-1]), color=(0, 0, 0), width=0.75)
+    for y in y_lines:
+        page.draw_line((x_lines[0], y), (x_lines[-1], y), color=(0, 0, 0), width=0.75)
+
+def place(page, x, y, text, size=9):
+    page.insert_text((x, y), str(text), fontsize=size, color=(0,0,0))
+
+def get_answers(item):
+    r = {}
+    for c in item.get("item", []):
+        a = c.get("answer", [])
+        if a and "valueBoolean" in a[0]:
+            r[c["linkId"]] = a[0]["valueBoolean"]
+    return r
 
 
-def crop_and_finish(img, rng):
-    alpha = img.getchannel("A")
-    if rng.random() < 0.55:
-        alpha = alpha.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0.18, 0.42) * SCALE))
-        img.putalpha(alpha)
+def is_renderable_fog_case(path):
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return False
 
-    bbox = img.getbbox()
-    if bbox is None:
-        return img.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
+    if data.get("questionnaire") != "fog-score":
+        return False
 
-    pad = int(rng.uniform(18, 28) * SCALE)
-    x0 = max(0, bbox[0] - pad)
-    y0 = max(0, bbox[1] - pad)
-    x1 = min(CANVAS, bbox[2] + pad)
-    y1 = min(CANVAS, bbox[3] + pad)
-    cropped = img.crop((x0, y0, x1, y1))
-
-    out = Image.new("RGBA", (CANVAS, CANVAS), (255, 255, 255, 0))
-    ox = (CANVAS - cropped.width) // 2 + int(rng.normal(0, 2.0 * SCALE))
-    oy = (CANVAS - cropped.height) // 2 + int(rng.normal(0, 2.0 * SCALE))
-    out.alpha_composite(cropped, (ox, oy))
-
-    arr = np.array(out, dtype=np.float32)
-    alpha_noise = rng.normal(0, 2.2, arr[:, :, 3].shape)
-    arr[:, :, 3] = np.clip(arr[:, :, 3] + alpha_noise * (arr[:, :, 3] > 0), 0, 255)
-    out = Image.fromarray(arr.astype(np.uint8), "RGBA")
-    return out.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
+    for group in data.get("item", []):
+        for child in group.get("item", []):
+            answers = child.get("answer", [])
+            if answers and "valueBoolean" in answers[0]:
+                return True
+    return False
 
 
-def make_x(seed):
+# ── Main render ───────────────────────────────────────────────────────────────
+def render_case(json_path, out_path, case_id, case_date, seed, assets):
     rng = np.random.default_rng(seed)
-    img = fresh_canvas()
-    draw = ImageDraw.Draw(img)
+    random.seed(seed)
 
-    cx = CENTER + rng.uniform(-6, 6) * SCALE
-    cy = CENTER + rng.uniform(-6, 6) * SCALE
-    half = rng.uniform(30, 38) * SCALE
-    overshoot = rng.uniform(1.5, 5.0) * SCALE
-    angle = math.radians(rng.uniform(-9, 9))
-    base_width = rng.uniform(3.8, 6.4) * SCALE
+    with open(json_path, "r") as f:
+        data = json.load(f)
 
-    h = half + overshoot
-    first = (rotate_point(cx, cy, -h, -h, angle), rotate_point(cx, cy, h, h, angle))
-    second = (rotate_point(cx, cy, h, -h, angle), rotate_point(cx, cy, -h, h, angle))
+    doc  = fitz.open(TEMPLATE_PDF)
+    page = doc[PAGE_INDEX]
 
-    for start, end in (first, second):
-        pts = cubic_path(start, end, rng, steps=26, wobble=rng.uniform(0.45, 1.25) * SCALE)
-        pressure_line(draw, pts, rng, base_width)
-        pen_stop(draw, *start, rng, scale=0.75)
-        pen_stop(draw, *end, rng, scale=0.75)
+    cols = [("a",COL_X["a"]),("b",COL_X["b"]),
+            ("c",COL_X["c"]),("d",COL_X["d"])]
 
-    if rng.random() < 0.18:
-        pen_stop(draw, cx, cy, rng, scale=0.55)
+    # Header
+    cover(page, 355, 42, 560, 90)
+    place(page, 420+float(rng.uniform(-1,1)),
+                57 +float(rng.uniform(-1,1)), case_id,   size=10)
+    place(page, 420+float(rng.uniform(-1,1)),
+                76 +float(rng.uniform(-1,1)), case_date, size=10)
 
-    return crop_and_finish(img, rng)
+    ans_map = {gi["linkId"]: get_answers(gi)
+               for gi in data.get("item", [])}
+    totals  = {"a":0,"b":0,"c":0,"d":0}
 
+    # Stamp marks
+    for row_id, yc in ROW_Y.items():
+        ans = ans_map.get(row_id, {})
+        for suf, cx in cols:
+            val  = ans.get(f"{row_id}{suf}", False)
+            mark = assets.rand_x() if val else assets.rand_o()
+            clear_cell(page, cx, yc)
+            stamp(page, mark, cx, yc, rng)
+            if val:
+                totals[suf] += 1
 
-def ellipse_points(cx, cy, rx, ry, angle, rng, steps=86, gap=None):
-    start = rng.uniform(0, 360)
-    gap_start = rng.uniform(0, 360) if gap else None
-    pts = []
-    for i in range(steps + 1):
-        deg = (start + 360 * i / steps) % 360
-        if gap is not None:
-            gap_end = (gap_start + gap) % 360
-            in_gap = deg > gap_start if gap_start < gap_end else deg > gap_start or deg < gap_end
-            if in_gap:
-                pts.append(None)
-                continue
-        theta = math.radians(deg)
-        local_rx = rx + rng.normal(0, 1.2 * SCALE)
-        local_ry = ry + rng.normal(0, 1.0 * SCALE)
-        x = local_rx * math.cos(theta)
-        y = local_ry * math.sin(theta)
-        pts.append(rotate_point(cx, cy, x, y, angle))
-    return pts
+    # Gesamtscore
+    for suf, cx in cols:
+        clear_cell(page, cx, TOTAL_Y)
+        stamp(page, assets.rand_o(), cx, TOTAL_Y, rng)
 
+    redraw_score_grid(page)
 
-def pressure_polyline(draw, pts, rng, base_width):
-    segment = []
-    for pt in pts:
-        if pt is None:
-            if len(segment) > 1:
-                pressure_line(draw, segment, rng, base_width)
-            segment = []
-        else:
-            segment.append(pt)
-    if len(segment) > 1:
-        pressure_line(draw, segment, rng, base_width)
+    # Render to high-res image (300 DPI)
+    mat = fitz.Matrix(300/72, 300/72)
+    pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+    pw  = page.rect.width
+    ph  = page.rect.height
+    doc.close()
 
+    img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
 
-def make_o(seed):
-    rng = np.random.default_rng(seed)
-    img = fresh_canvas()
-    draw = ImageDraw.Draw(img)
+    # Apply full document degradation pipeline
+    img = degrade(img, rng)
 
-    cx = CENTER + rng.uniform(-6, 6) * SCALE
-    cy = CENTER + rng.uniform(-6, 6) * SCALE
-    rx = rng.uniform(23, 32) * SCALE
-    ry = rng.uniform(26, 38) * SCALE
-    angle = math.radians(rng.uniform(-12, 12))
-    base_width = rng.uniform(4.0, 6.8) * SCALE
-    gap = None
+    # Save back as PDF at original page dimensions
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    out_doc  = fitz.open()
+    out_page = out_doc.new_page(width=pw, height=ph)
+    out_page.insert_image(fitz.Rect(0,0,pw,ph), stream=buf.getvalue())
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    out_doc.save(str(out_path))
+    out_doc.close()
 
-    pts = ellipse_points(cx, cy, rx, ry, angle, rng, gap=gap)
-    pressure_polyline(draw, pts, rng, base_width)
-
-    if rng.random() < 0.36:
-        pen_stop(draw, *rotate_point(cx, cy, rx, 0, angle), rng, scale=0.55)
-    return crop_and_finish(img, rng)
+    return totals
 
 
-def make_preview(x_imgs, o_imgs, path):
-    pad = 6
-    cols = 8
-    rows = ([x_imgs[i:i + cols] for i in range(0, len(x_imgs), cols)]
-            + [[]]
-            + [o_imgs[i:i + cols] for i in range(0, len(o_imgs), cols)])
-    w = cols * (SIZE + pad) + pad
-    h = len(rows) * (SIZE + pad) + pad
-    grid = Image.new("RGB", (w, h), (218, 218, 218))
-    for ri, row in enumerate(rows):
-        for ci, img in enumerate(row):
-            bg = Image.new("RGB", (SIZE, SIZE), (255, 255, 255))
-            bg.paste(img, mask=img.getchannel("A"))
-            grid.paste(bg, (pad + ci * (SIZE + pad), pad + ri * (SIZE + pad)))
-    grid.save(path)
-
-
+# ── Entry point ───────────────────────────────────────────────────────────────
 def main():
-    x_dir = Path("assets/x_marks")
-    o_dir = Path("assets/o_marks")
-    x_dir.mkdir(parents=True, exist_ok=True)
-    o_dir.mkdir(parents=True, exist_ok=True)
+    print("📦  Loading assets...")
+    assets = MarkAssets(ASSETS_DIR)
 
-    x_imgs = []
-    o_imgs = []
-    print(f"Generating {X_COUNT} X marks...")
-    for i in range(X_COUNT):
-        img = make_x(i * 41 + 3)
-        img.save(x_dir / f"x{i + 1:02d}.png")
-        x_imgs.append(img)
+    ds = Path("dataset"); rd = Path("rendered_forms")
+    rd.mkdir(exist_ok=True)
 
-    print(f"Generating {O_COUNT} O marks...")
-    for i in range(O_COUNT):
-        img = make_o(i * 43 + 7)
-        img.save(o_dir / f"o{i + 1:02d}.png")
-        o_imgs.append(img)
+    cases = [p for p in sorted(ds.glob("case_*.json"))
+             if is_renderable_fog_case(p)]
+    if not cases:
+        print("❌  No renderable fog-score case_*.json files found. Run 'cargo run' first.")
+        return
 
-    make_preview(x_imgs, o_imgs, "assets/preview.png")
-    print(f"Ready: {X_COUNT} X + {O_COUNT} O handwritten assets in assets/")
+    print(f"\n📋  Generating {len(cases)} cases...\n")
 
+    for cf in cases:
+        stem   = cf.stem
+        num    = stem.replace("case_", "")
+        out    = rd / f"fog_{stem}.pdf"
+        totals = render_case(
+            str(cf), out,
+            f"CASE-{num}", "26.03.2026",
+            int(num)*137, assets
+        )
+        print(f"    CASE-{num}  "
+              f"a:{totals['a']} b:{totals['b']} "
+              f"c:{totals['c']} d:{totals['d']}")
+
+    print(f"\n🎉  {len(cases)} scanned PDFs in rendered_forms/")
 
 if __name__ == "__main__":
     main()
