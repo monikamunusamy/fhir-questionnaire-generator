@@ -1,0 +1,20 @@
+========================================
+Patient Intake Form
+========================================
+
+1. Patient Full Name
+   Luca Weber
+
+2. Date of Birth
+   1950-07-27
+
+3. Patient Age
+   18
+
+4. Does the patient currently take medication?
+   [X] Yes    [ ] No
+
+5. Reason for visit
+   Medication adjustment requested.
+
+========================================

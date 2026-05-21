@@ -1,0 +1,20 @@
+========================================
+Patient Intake Form
+========================================
+
+1. Patient Full Name
+   Mina Rossi
+
+2. Date of Birth
+   1966-08-09
+
+3. Patient Age
+   55
+
+4. Does the patient currently take medication?
+   [ ] Yes    [X] No
+
+5. Reason for visit
+   Patient reports worsening symptoms.
+
+========================================

@@ -1,0 +1,20 @@
+========================================
+Patient Intake Form
+========================================
+
+1. Patient Full Name
+   John Ali
+
+2. Date of Birth
+   1970-09-27
+
+3. Patient Age
+   53
+
+4. Does the patient currently take medication?
+   [ ] Yes    [X] No
+
+5. Reason for visit
+   Medication adjustment requested.
+
+========================================

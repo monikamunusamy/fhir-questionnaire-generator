@@ -1,0 +1,20 @@
+========================================
+Patient Intake Form
+========================================
+
+1. Patient Full Name
+   John Khan
+
+2. Date of Birth
+   2002-09-06
+
+3. Patient Age
+   87
+
+4. Does the patient currently take medication?
+   [X] Yes    [ ] No
+
+5. Reason for visit
+   Patient reports worsening symptoms.
+
+========================================

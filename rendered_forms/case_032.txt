@@ -1,0 +1,20 @@
+========================================
+Patient Intake Form
+========================================
+
+1. Patient Full Name
+   Max Ali
+
+2. Date of Birth
+   1951-11-19
+
+3. Patient Age
+   59
+
+4. Does the patient currently take medication?
+   [ ] Yes    [X] No
+
+5. Reason for visit
+   Patient reports worsening symptoms.
+
+========================================

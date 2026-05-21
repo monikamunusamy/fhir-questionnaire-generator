@@ -1,6 +1,5 @@
 target/
 dataset/
-rendered_forms/
 templates/
 test_output.pdf
 test_case_overlay.pdf

@@ -1,0 +1,20 @@
+========================================
+Patient Intake Form
+========================================
+
+1. Patient Full Name
+   Mina Khan
+
+2. Date of Birth
+   1968-08-17
+
+3. Patient Age
+   26
+
+4. Does the patient currently take medication?
+   [X] Yes    [ ] No
+
+5. Reason for visit
+   Medication adjustment requested.
+
+========================================

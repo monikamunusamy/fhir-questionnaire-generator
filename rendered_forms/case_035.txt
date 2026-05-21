@@ -1,0 +1,20 @@
+========================================
+Patient Intake Form
+========================================
+
+1. Patient Full Name
+   Anna Khan
+
+2. Date of Birth
+   1951-09-14
+
+3. Patient Age
+   47
+
+4. Does the patient currently take medication?
+   [X] Yes    [ ] No
+
+5. Reason for visit
+   Routine follow-up visit.
+
+========================================
